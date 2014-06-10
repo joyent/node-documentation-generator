@@ -67,7 +67,7 @@ function processIncludes(input, cb) {
   if (incCount === 0) cb(null, input);
   includes.forEach(function(include) {
     var fname = include.replace(/^@include\s+/, '');
-    if (!fname.match(/\.markdown$/)) fname += '.markdown';
+    if (!fname.match(/\.md$/)) fname += '.md';
 
     if (includeData.hasOwnProperty(fname)) {
       input = input.split(include).join(includeData[fname]);
@@ -107,7 +107,14 @@ function next(er, input) {
       break;
 
     case 'html':
-      require('./html.js')(input, inputFile, template, function(er, html) {
+      var configDir = path.dirname(inputFile);
+      var configFile = path.basename(inputFile, '.md') + '.json';
+      configFile = path.join(configDir, configFile);
+      console.error('checking for', configFile);
+      var configObj = {};
+      if (fs.existsSync(configFile))
+        configObj = JSON.parse(fs.readFileSync(configFile))
+      require('./html.js')(input, inputFile, template, configObj, function(er, html) {
         if (er) throw er;
         console.log(html);
       });
