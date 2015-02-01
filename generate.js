@@ -23,6 +23,7 @@
 var marked = require('marked');
 var fs = require('fs');
 var path = require('path');
+var getFileEnding = require('./lib/get-file-ending.js');
 
 // parse the args.
 // Don't use nopt or whatever for this.  It's simple enough.
@@ -65,31 +66,35 @@ function processIncludes(input, cb) {
   console.error(includes);
   var incCount = includes.length;
   if (incCount === 0) cb(null, input);
+
   includes.forEach(function(include) {
     var fname = include.replace(/^@include\s+/, '');
-    if (!fname.match(/\.md$/)) fname += '.md';
-
-    if (includeData.hasOwnProperty(fname)) {
-      input = input.split(include).join(includeData[fname]);
-      incCount--;
-      if (incCount === 0) {
-        return cb(null, input);
-      }
-    }
-
-    var fullFname = path.resolve(path.dirname(inputFile), fname);
-    fs.readFile(fullFname, 'utf8', function(er, inc) {
-      if (errState) return;
-      if (er) return cb(errState = er);
-      processIncludes(inc, function(er, inc) {
-        if (errState) return;
-        if (er) return cb(errState = er);
+    getFileEnding(path.resolve(path.dirname(inputFile), fname), function(err, ending) {
+      if (err) throw err;
+      if (ending)
+        fname = fname + ending;
+      if (includeData.hasOwnProperty(fname)) {
+        input = input.split(include).join(includeData[fname]);
         incCount--;
-        includeData[fname] = inc;
-        input = input.split(include+'\n').join(includeData[fname]+'\n');
         if (incCount === 0) {
           return cb(null, input);
         }
+      }
+
+      var fullFname = path.resolve(path.dirname(inputFile), fname);
+      fs.readFile(fullFname, 'utf8', function(er, inc) {
+        if (errState) return;
+        if (er) return cb(errState = er);
+        processIncludes(inc, function(er, inc) {
+          if (errState) return;
+          if (er) return cb(errState = er);
+          incCount--;
+          includeData[fname] = inc;
+          input = input.split(include+'\n').join(includeData[fname]+'\n');
+          if (incCount === 0) {
+            return cb(null, input);
+          }
+        });
       });
     });
   });
@@ -108,15 +113,18 @@ function next(er, input) {
 
     case 'html':
       var configDir = path.dirname(inputFile);
-      var configFile = path.basename(inputFile, '.md') + '.json';
-      configFile = path.join(configDir, configFile);
-      console.error('checking for', configFile);
-      var configObj = {};
-      if (fs.existsSync(configFile))
-        configObj = JSON.parse(fs.readFileSync(configFile))
-      require('./html.js')(input, inputFile, template, configObj, function(er, html) {
-        if (er) throw er;
-        console.log(html);
+      getFileEnding(inputFile, function(err, ending) {
+        if (err) throw err;
+        var configFile = path.basename(inputFile, ending) + '.json';
+        configFile = path.join(configDir, configFile);
+        console.error('checking for', configFile);
+        var configObj = {};
+        if (fs.existsSync(configFile))
+          configObj = JSON.parse(fs.readFileSync(configFile))
+        require('./html.js')(input, inputFile, template, configObj, function(er, html) {
+          if (er) throw er;
+          console.log(html);
+        });
       });
       break;
 
