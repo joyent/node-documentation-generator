@@ -23,6 +23,11 @@
 var marked = require('marked');
 var fs = require('fs');
 var path = require('path');
+var findMarkdownFile = require('./lib/find-markdown-file.js');
+var getConfigForMarkdownFile = require('./lib/get-config-for-markdown-file.js');
+
+var html = require('./html.js');
+var json = require('./json.js');
 
 // parse the args.
 // Don't use nopt or whatever for this.  It's simple enough.
@@ -65,31 +70,33 @@ function processIncludes(input, cb) {
   console.error(includes);
   var incCount = includes.length;
   if (incCount === 0) cb(null, input);
+
   includes.forEach(function(include) {
     var fname = include.replace(/^@include\s+/, '');
-    if (!fname.match(/\.md$/)) fname += '.md';
-
-    if (includeData.hasOwnProperty(fname)) {
-      input = input.split(include).join(includeData[fname]);
-      incCount--;
-      if (incCount === 0) {
-        return cb(null, input);
-      }
-    }
-
-    var fullFname = path.resolve(path.dirname(inputFile), fname);
-    fs.readFile(fullFname, 'utf8', function(er, inc) {
-      if (errState) return;
-      if (er) return cb(errState = er);
-      processIncludes(inc, function(er, inc) {
-        if (errState) return;
-        if (er) return cb(errState = er);
+    findMarkdownFile(path.resolve(path.dirname(inputFile), fname), function(err, file) {
+      if (err) throw err;
+      if (includeData.hasOwnProperty(file)) {
+        input = input.split(include).join(includeData[file]);
         incCount--;
-        includeData[fname] = inc;
-        input = input.split(include+'\n').join(includeData[fname]+'\n');
         if (incCount === 0) {
           return cb(null, input);
         }
+      }
+
+      var fullFname = path.resolve(path.dirname(inputFile), file);
+      fs.readFile(fullFname, 'utf8', function(err, inc) {
+        if (errState) return;
+        if (err) return cb(errState = err);
+        processIncludes(inc, function(err, inc) {
+          if (errState) return;
+          if (err) return cb(errState = err);
+          incCount--;
+          includeData[file] = inc;
+          input = input.split(include + '\n').join(includeData[file] + '\n');
+          if (incCount === 0) {
+            return cb(null, input);
+          }
+        });
       });
     });
   });
@@ -100,21 +107,15 @@ function next(er, input) {
   if (er) throw er;
   switch (format) {
     case 'json':
-      require('./json.js')(input, inputFile, function(er, obj) {
+      json(input, inputFile, function(er, obj) {
         console.log(JSON.stringify(obj, null, 2));
         if (er) throw er;
       });
       break;
 
     case 'html':
-      var configDir = path.dirname(inputFile);
-      var configFile = path.basename(inputFile, '.md') + '.json';
-      configFile = path.join(configDir, configFile);
-      console.error('checking for', configFile);
-      var configObj = {};
-      if (fs.existsSync(configFile))
-        configObj = JSON.parse(fs.readFileSync(configFile))
-      require('./html.js')(input, inputFile, template, configObj, function(er, html) {
+      var configObj = getConfigForMarkdownFile(inputFile);
+      html(input, inputFile, template, configObj, function(er, html) {
         if (er) throw er;
         console.log(html);
       });
